@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drum Beat - Game Drum</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: #f8fafc;
+    font-family: system-ui, Arial, sans-serif;
+    background: radial-gradient(circle at top, #243b68, #0b1020 65%);
+    display: flex; justify-content: center; align-items: center; padding: 22px;
+  }
+  .game {
+    width: min(760px, 100%); text-align: center;
+    background: rgba(10, 16, 32, .82); border: 1px solid #33466c;
+    border-radius: 24px; padding: 26px 20px 22px;
+    box-shadow: 0 18px 55px #0008;
+  }
+  h1 { margin: 0 0 6px; letter-spacing: 2px; }
+  .sub { color: #a9bbd8; margin: 0 0 20px; }
+  .status { display:flex; justify-content:center; gap:18px; flex-wrap:wrap; margin-bottom:22px; color:#c9d7ef; }
+  .status strong { color:#7dd3fc; }
+  .pads { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:13px; }
+  .pad {
+    min-height: 112px; border: 2px solid #52698f; border-radius: 18px;
+    background: linear-gradient(145deg, #263b61, #121d35);
+    color:white; cursor:pointer; touch-action: manipulation;
+    display:flex; flex-direction:column; justify-content:center; align-items:center;
+    gap:7px; box-shadow: 0 7px 0 #080e1b, 0 12px 20px #0005;
+    transition: transform .07s, filter .07s, box-shadow .07s;
+    user-select:none;
+  }
+  .pad:active, .pad.hit { transform: translateY(5px) scale(.98); box-shadow: 0 2px 0 #080e1b; filter:brightness(1.35); }
+  .pad .icon { font-size:30px; line-height:1; }
+  .pad .name { font-weight:750; font-size:15px; }
+  .pad .key { font-size:12px; color:#9db5d9; }
+  .controls { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:24px; }
+  button.control {
+    border:0; border-radius:12px; padding:11px 17px; font-weight:700;
+    color:#081326; background:#7dd3fc; cursor:pointer;
+  }
+  button.control.secondary { background:#dbeafe; }
+  .hint { color:#9aaccb; font-size:13px; line-height:1.6; margin:19px 0 0; }
+  @media (max-width:480px) {
+    .game { padding:22px 13px; }
+    .pad { min-height:96px; }
+    .pad .icon { font-size:26px; }
+    .pad .name { font-size:13px; }
+  }
+</style>
+</head>
+<body>
+<main class="game">
+  <h1>🥁 DRUM BEAT</h1>
+  <p class="sub">Sentuh pad atau tekan tombol keyboard untuk bermain!</p>
+  <div class="status">
+    <span>Skor: <strong id="score">0</strong></span>
+    <span>Combo: <strong id="combo">0</strong></span>
+    <span>Suara: <strong id="soundState">Aktif</strong></span>
+  </div>
+
+  <section class="pads" aria-label="Drum pads">
+    <button class="pad" data-sound="kick"><span class="icon">🥁</span><span class="name">KICK</span><span class="key">Tombol A</span></button>
+    <button class="pad" data-sound="snare"><span class="icon">🪘</span><span class="name">SNARE</span><span class="key">Tombol S</span></button>
+    <button class="pad" data-sound="hihat"><span class="icon">🔔</span><span class="name">HI-HAT</span><span class="key">Tombol D</span></button>
+    <button class="pad" data-sound="tom1"><span class="icon">🥁</span><span class="name">HIGH TOM</span><span class="key">Tombol J</span></button>
+    <button class="pad" data-sound="tom2"><span class="icon">🥁</span><span class="name">MID TOM</span><span class="key">Tombol K</span></button>
+    <button class="pad" data-sound="crash"><span class="icon">✨</span><span class="name">CRASH</span><span class="key">Tombol L</span></button>
+  </section>
+
+  <div class="controls">
+    <button class="control" id="demo">▶ Putar Beat Demo</button>
+    <button class="control secondary" id="reset">↻ Reset Skor</button>
+  </div>
+  <p class="hint">Tips: A = Kick · S = Snare · D = Hi-Hat · J = High Tom · K = Mid Tom · L = Crash<br>Game bisa dimainkan di HP maupun komputer.</p>
+</main>
+<script>
+(() => {
+  let audioCtx, score = 0, combo = 0, demoTimer = null;
+  const scoreEl = document.getElementById('score');
+  const comboEl = document.getElementById('combo');
+  const soundState = document.getElementById('soundState');
+
+  function audio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function tone(freq, duration, type='sine', volume=.5, endFreq=null) {
+    const ctx = audio(), now = ctx.currentTime;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(freq, now);
+    if (endFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(1,endFreq), now+duration);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(.001, now+duration);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(now); osc.stop(now+duration);
+  }
+  function noise(duration, volume, filterType='highpass', cutoff=1000) {
+    const ctx = audio(), length = Math.max(1, Math.floor(ctx.sampleRate*duration));
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i=0;i<length;i++) data[i] = Math.random()*2-1;
+    const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+    src.buffer = buffer; filter.type=filterType; filter.frequency.value=cutoff;
+    gain.gain.setValueAtTime(volume,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+duration);
+    src.connect(filter); filter.connect(gain); gain.connect(ctx.destination); src.start();
+  }
+  const sounds = {
+    kick: () => tone(145,.28,'sine',.95,42),
+    snare: () => { noise(.19,.55,'highpass',1200); tone(190,.12,'triangle',.22,90); },
+    hihat: () => noise(.075,.25,'highpass',6500),
+    tom1: () => tone(220,.22,'sine',.65,95),
+    tom2: () => tone(155,.25,'sine',.65,65),
+    crash: () => noise(.65,.38,'highpass',4200)
+  };
+  function play(name, count=true) {
+    audio(); sounds[name]?.();
+    const pad = document.querySelector(`[data-sound="${name}"]`);
+    if (pad) {
+      pad.classList.add('hit');
+      setTimeout(()=>pad.classList.remove('hit'),100);
+    }
+    if (count) {
+      score += 10; combo += 1;
+      scoreEl.textContent=score; comboEl.textContent=combo;
+    }
+    soundState.textContent='Aktif';
+  }
+  document.querySelectorAll('.pad').forEach(pad => {
+    pad.addEventListener('pointerdown', e => { e.preventDefault(); play(pad.dataset.sound); });
+  });
+  const keys = {a:'kick',s:'snare',d:'hihat',j:'tom1',k:'tom2',l:'crash'};
+  document.addEventListener('keydown', e => {
+    if (e.repeat) return;
+    const sound=keys[e.key.toLowerCase()];
+    if(sound) play(sound);
+  });
+  document.getElementById('reset').addEventListener('click',()=>{
+    score=0; combo=0; scoreEl.textContent='0'; comboEl.textContent='0';
+  });
+  const pattern = ['kick','hihat','snare','hihat','kick','hihat','snare','crash','tom1','tom2','snare','hihat'];
+  document.getElementById('demo').addEventListener('click',()=>{
+    const btn=document.getElementById('demo');
+    if(demoTimer){ clearInterval(demoTimer); demoTimer=null; btn.textContent='▶ Putar Beat Demo'; return; }
+    let i=0; btn.textContent='■ Hentikan Demo';
+    play(pattern[i++],false);
+    demoTimer=setInterval(()=>{
+      if(i>=pattern.length){ clearInterval(demoTimer); demoTimer=null; btn.textContent='▶ Putar Beat Demo'; return; }
+      play(pattern[i++],false);
+    },350);
+  });
+})();
+</script>
+</body>
+</html>
